@@ -155,7 +155,18 @@ Save a report:
 git-colab-stats --format md > report.md
 ```
 
-### Aggregating Multiple Projects
+### Tips
+
+#### Render the report
+
+Add some [glow](https://github.com/charmbracelet/glow) to the mix.
+Use a md renderer to instantly view the report.
+
+```bash
+git-colab-stats-dotnet-csharp | git-colab-summary --format md --mode all | glow -p
+```
+
+#### Aggregating Multiple Projects
 
 The individual `git-colab-stats-*` scripts are designed to produce machine-readable output that can be combined into higher-level reports.
 
@@ -174,6 +185,30 @@ This allows repository-level metrics to be aggregated into a single summary repo
 - Knowledge concentration
 - Ownership distribution
 - Bus-factor risk across projects
+
+#### Use the git .mailmap
+
+List all users with
+
+```bash
+git shortlog -sne --all
+```
+
+and check for duplicates.
+Add or update the .mailmap file to remove duplicate names.
+
+**Example**
+
+If the command above returns:
+
+```
+Link <link@games.com>
+zelda-link <link@games.com>
+sonic <sonic@fast.speed>
+```
+
+Add `Link <link@games.com> zelda-link <link@games.com>` to the .mailmap.
+This way only `Link` will be gathered when metric collection happens (git-colab-stats-*).
 
 ---
 
@@ -232,7 +267,6 @@ The objective is to help answer questions such as:
 
 Planned improvements include:
 
-- Support for `.mailmap` to consolidate contributor identities.
 - Additional ownership heuristics.
 - Repository-level trend analysis.
 - Historical comparison reports.
