@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VERSION=0.0.1
+VERSION=0.1.0
 DRY_RUN=false
 DEBUG=false
 
@@ -125,9 +125,10 @@ for project in "${projects[@]}"; do
 
   done < <(
     git --no-pager log \
+      --use-mailmap \
       --no-merges \
       --numstat \
-      --format='AUTHOR:%an' \
+      --format='AUTHOR:%aN' \
       -- "$dir"
   )
 
