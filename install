@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+
+INSTALL_DIR="$HOME/.local/bin"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+usage() {
+  cat <<EOF
+Usage:
+  ./install
+  ./install --uninstall
+
+Installs all git-colab* scripts into:
+
+  $INSTALL_DIR
+
+using symbolic links.
+EOF
+}
+
+if [[ "${1:-}" == "--help" ]]; then
+  usage
+  exit 0
+fi
+
+mkdir -p "$INSTALL_DIR"
+
+if [[ "${1:-}" == "--uninstall" ]]; then
+  removed=0
+
+  for script in "$SCRIPT_DIR"/git-colab*; do
+    [[ -f "$script" ]] || continue
+
+    target="$INSTALL_DIR/$(basename "$script")"
+
+    if [[ -L "$target" ]]; then
+      rm "$target"
+      echo "Removed $(basename "$script")"
+      ((removed += 1))
+    fi
+  done
+
+  echo
+  echo "Uninstalled $removed script(s)."
+  exit 0
+fi
+
+installed=0
+
+for script in "$SCRIPT_DIR"/git-colab*; do
+  [[ -f "$script" ]] || continue
+  [[ "$script" != "$SCRIPT_DIR/install.sh" ]] || continue
+
+  chmod +x "$script"
+
+  target="$INSTALL_DIR/$(basename "$script")"
+
+  ln -sfn "$script" "$target"
+
+  echo "Linked $(basename "$script")"
+  ((installed += 1))
+done
+
+echo
+echo "Installed $installed script(s) into:"
+echo "  $INSTALL_DIR"
+
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+  cat <<EOF
+
+WARNING: $INSTALL_DIR is not on your PATH.
+
+Add this to your shell profile (~/.bashrc, ~/.zshrc, etc.):
+
+export PATH="\$HOME/.local/bin:\$PATH"
+
+EOF
+fi
+
+echo
+echo "Done."

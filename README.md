@@ -35,6 +35,28 @@ This is the script that can summarize the output from one or more git-colab-stat
 
 ---
 
+## Installation
+
+```bash
+git clone https://github.com/stark-antonio-almeida/project-colab-status.git &&
+cd git-colab &&
+./install.sh
+```
+
+Verify the installation:
+
+```bash
+git-colab-stats --help
+```
+
+Uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
+---
+
 ## Example Output
 
 ### Pretty
