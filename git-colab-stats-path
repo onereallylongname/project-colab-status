@@ -1,0 +1,182 @@
+#!/usr/bin/env bash
+
+VERSION=0.1.1
+DRY_RUN=false
+DEBUG=false
+SINCE=""
+UNTIL=""
+
+usage() {
+  local prog="${GIT_COLAB_PROGRAM_NAME:-${0##*/}}"
+
+  cat <<EOF
+Usage: $prog [options] <path>...
+
+Options:
+  -s --since <since>  Add a git since string to reduce the time range. Usefull for performance
+                      and to get a more reliable result of who as been working on the repo
+  -u --until <until>  Same as the --since flag, used the until value as the git until
+  --debug             Enable debug output
+  --dry-run           Disable the real output. Useful combined with --debug
+  -d                  Use --dry-run and --debug in one shot
+  -h, --help          Show help
+  --version           Print the current script version
+EOF
+}
+
+debug() {
+  $DEBUG || return 0
+
+  printf '[DEBUG] '
+  printf -- "$@"
+}
+
+emit() {
+  $DRY_RUN && return 0
+
+  printf '%s\t%s\t%s\t%s\t%s\n' "$@"
+}
+
+declare -a boundaries=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+  --debug)
+    DEBUG=true
+    shift
+    ;;
+
+  --dry-run)
+    DRY_RUN=true
+    shift
+    ;;
+
+  -d)
+    DEBUG=true
+    DRY_RUN=true
+    shift
+    ;;
+
+  --help | -h)
+    usage
+    exit 0
+    ;;
+
+  --version)
+    echo "$VERSION"
+    exit 0
+    ;;
+
+  --since)
+    SINCE="$2"
+    shift 2
+    ;;
+
+  --until)
+    UNTIL="$2"
+    shift 2
+    ;;
+
+  -*)
+    echo "Unknown option: $1" >&2
+    exit 1
+    ;;
+
+  *)
+    boundaries+=("$1")
+    shift
+    ;;
+  esac
+done
+
+# Check if there are paths to analyse
+if ((${#boundaries[@]} == 0)); then
+  echo "At least one path is required" >&2
+  exit 1
+fi
+
+# Check if the paths are valid
+for boundary in "${boundaries[@]}"; do
+  [[ -e "$boundary" ]] || {
+    echo "Path not found: $boundary" >&2
+    exit 1
+  }
+done
+
+debug "Found ${#boundaries[@]} boundaries"
+
+emit \
+  "boundary" \
+  "author" \
+  "commits" \
+  "additions" \
+  "deletions"
+
+for boundary in "${boundaries[@]}"; do
+  dir="$boundary"
+
+  debug "$dir\n"
+
+  declare -A commits
+  declare -A additions
+  declare -A deletions
+
+  current_author=""
+
+  while read -r line; do
+
+    if [[ "$line" == AUTHOR:* ]]; then
+      current_author="${line#AUTHOR:}"
+
+      key="$current_author|$dir"
+
+      ((commits["$key"] += 1))
+
+      debug 'author=[%s]\n' "$current_author"
+
+      continue
+    fi
+
+    [[ -z "$line" ]] && continue
+
+    IFS=$'\t' read -r added removed file <<<"$line"
+
+    [[ "$added" == "-" ]] && continue
+
+    key="$current_author|$dir"
+
+    ((additions["$key"] += added))
+    ((deletions["$key"] += removed))
+
+    debug \
+      'boundary=[%s] author=[%s] +[%s] -[%s] file=[%s]\n' \
+      "$dir" \
+      "$current_author" \
+      "$added" \
+      "$removed" \
+      "$file"
+
+  done < <(
+    git --no-pager log \
+      --use-mailmap \
+      --no-merges \
+      --numstat \
+      --format='AUTHOR:%aN' \
+      ${SINCE:+--since="$SINCE"} \
+      ${UNTIL:+--until="$UNTIL"} \
+      -- "$dir"
+  )
+
+done
+
+for key in "${!commits[@]}"; do
+  author="${key%%|*}"
+  dir="${key#*|}"
+
+  emit \
+    "$dir" \
+    "$author" \
+    "${commits[$key]}" \
+    "${additions[$key]}" \
+    "${deletions[$key]}"
+done
