@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+
+VERSION=0.0.1
+DRY_RUN=false
+DEBUG=false
+
+usage() {
+        cat <<EOF
+Usage: ${0##*/}
+
+Options:
+  --debug       Enable debug output
+  --dry-run     Disable the real output. Useful combined with --debug
+  -d            Use --dry-run and --debug in one shot
+  --csv         Print the output as csv
+  -h, --help    Show help
+  --version     Print the current script version
+EOF
+}
+
+debug() {
+        $DEBUG || return 0
+
+        printf '[DEBUG] '
+        printf -- "$@"
+}
+
+emit() {
+        $DRY_RUN && return 0
+
+        printf '%s\t%s\t%s\t%s\t%s\n' "$@"
+}
+
+while [[ $# -gt 0 ]]; do
+        case "$1" in
+        --debug)
+                DEBUG=true
+                shift
+                ;;
+
+        --dry-run)
+                DRY_RUN=true
+                shift
+                ;;
+
+        -d)
+                DEBUG=true
+                DRY_RUN=true
+                shift
+                ;;
+
+        --help | -h)
+                usage
+                exit 0
+                ;;
+
+        --version)
+                echo "$VERSION"
+                exit 0
+                ;;
+
+        *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+done
+
+mapfile -d '' -t projects < <(
+        find src -name '*.csproj' -print0
+)
+
+debug "Found ${#projects[@]} projects"
+
+emit \
+        "project" \
+        "author" \
+        "commits" \
+        "additions" \
+        "deletions"
+
+for project in "${projects[@]}"; do
+        dir=$(dirname "$project")
+
+        debug "$dir\n"
+
+        declare -A commits
+        declare -A additions
+        declare -A deletions
+
+        current_author=""
+
+        while read -r line; do
+
+                if [[ "$line" == AUTHOR:* ]]; then
+                        current_author="${line#AUTHOR:}"
+
+                        key="$current_author|$dir"
+
+                        ((commits["$key"] += 1))
+
+                        debug 'author=[%s]\n' "$current_author"
+
+                        continue
+                fi
+
+                [[ -z "$line" ]] && continue
+
+                IFS=$'\t' read -r added removed file <<<"$line"
+
+                [[ "$added" == "-" ]] && continue
+
+                key="$current_author|$dir"
+
+                ((additions["$key"] += added))
+                ((deletions["$key"] += removed))
+
+                debug \
+                        'project=[%s] author=[%s] +[%s] -[%s] file=[%s]\n' \
+                        "$dir" \
+                        "$current_author" \
+                        "$added" \
+                        "$removed" \
+                        "$file"
+
+        done < <(
+                git --no-pager log \
+                        --no-merges \
+                        --numstat \
+                        --format='AUTHOR:%an' \
+                        -- "$dir"
+        )
+
+done
+
+for key in "${!commits[@]}"; do
+        author="${key%%|*}"
+        dir="${key#*|}"
+
+        emit \
+                "$dir" \
+                "$author" \
+                "${commits[$key]}" \
+                "${additions[$key]}" \
+                "${deletions[$key]}"
+done
