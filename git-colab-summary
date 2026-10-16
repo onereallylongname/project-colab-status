@@ -1,0 +1,426 @@
+#!/usr/bin/env bash
+
+VERSION=0.1.0
+DEBUG=false
+FORMAT=tsv
+
+usage() {
+        cat <<EOF
+Usage:
+  git-colab-stats | ${0##*/} [options]
+
+Options:
+  --pretty      Human readable output
+  --debug       Enable debug output
+  --version     Print version
+  -h, --help    Show help
+EOF
+}
+
+usage_text() {
+        cat <<EOF
+Analyzes contribution data produced by git-colab-stats.
+
+The generated metrics help answer:
+  - Who contributes most to a project?
+  - Who is most engaged with a project?
+  - How concentrated is project knowledge?
+  - What is the project's bus factor?
+
+EOF
+}
+
+debug() {
+        $DEBUG || return 0
+
+        printf '[DEBUG] '
+        printf -- "$@"
+}
+
+while [[ $# -gt 0 ]]; do
+        case "$1" in
+
+        --format)
+                FORMAT="$2"
+                shift 2
+                ;;
+
+        --pretty)
+                FORMAT=pretty
+                shift
+                ;;
+
+        --debug)
+                DEBUG=true
+                shift
+                ;;
+
+        --version)
+                printf '%s\n' "$VERSION"
+                exit 0
+                ;;
+
+        -h)
+                usage
+                exit 0
+                ;;
+
+        --help)
+                usage_text
+                usage
+                exit 0
+                ;;
+
+        *)
+                printf 'Unknown option: %s\n' "$1" >&2
+                exit 1
+                ;;
+        esac
+done
+
+#
+# Storage
+#
+
+declare -A commits
+declare -A additions
+declare -A deletions
+declare -A churn
+
+declare -A project_commits
+declare -A project_churn
+
+#
+# Read header
+#
+
+IFS=$'\t' read -r _header_project _header_author _header_commits _header_additions _header_deletions
+
+#
+# First pass
+#
+
+while IFS=$'\t' read -r project author commit_count added deleted; do
+
+        key="$project|$author"
+
+        commits["$key"]="$commit_count"
+        additions["$key"]="$added"
+        deletions["$key"]="$deleted"
+
+        record_churn=$((added + deleted))
+        churn["$key"]="$record_churn"
+
+        ((project_commits["$project"] += commit_count))
+        ((project_churn["$project"] += record_churn))
+
+        debug \
+                'project=[%s] author=[%s] commits=[%s] churn=[%s]\n' \
+                "$project" \
+                "$author" \
+                "$commit_count" \
+                "$record_churn"
+
+done
+
+emit_tsv() {
+
+        printf 'project\tauthor\tcommits\tadditions\tdeletions\tchurn\tcommit_ownership\tchurn_ownership\tengagement\n'
+
+        for key in "${!commits[@]}"; do
+
+                project="${key%%|*}"
+                author="${key#*|}"
+
+                commit_count="${commits[$key]}"
+                added="${additions[$key]}"
+                deleted="${deletions[$key]}"
+                record_churn="${churn[$key]}"
+
+                project_total_commits="${project_commits[$project]}"
+                project_total_churn="${project_churn[$project]}"
+
+                commit_ownership=$(
+                        printf '%.2f' \
+                                "$((\
+                                10000 * commit_count / project_total_commits))e-2"
+                )
+
+                churn_ownership=$(
+                        printf '%.2f' \
+                                "$((\
+                                10000 * record_churn / project_total_churn))e-2"
+                )
+
+                engagement=$(
+                        printf '%.2f' \
+                                "$((((\
+                                10000 * commit_count / project_total_commits) + (\
+                                10000 * record_churn / project_total_churn)) / \
+                                2))e-2"
+                )
+
+                printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+                        "$project" \
+                        "$author" \
+                        "$commit_count" \
+                        "$added" \
+                        "$deleted" \
+                        "$record_churn" \
+                        "$commit_ownership" \
+                        "$churn_ownership" \
+                        "$engagement"
+        done
+}
+
+emit_pretty() {
+
+        declare -A projects_seen
+
+        for key in "${!commits[@]}"; do
+                project="${key%%|*}"
+                projects_seen["$project"]=1
+        done
+
+        for project in "${!projects_seen[@]}"; do
+                rows=()
+
+                for key in "${!commits[@]}"; do
+
+                        current_project="${key%%|*}"
+                        author="${key#*|}"
+
+                        [[ "$current_project" != "$project" ]] && continue
+
+                        commit_count="${commits[$key]}"
+                        record_churn="${churn[$key]}"
+
+                        project_total_commits="${project_commits[$project]}"
+                        project_total_churn="${project_churn[$project]}"
+
+                        commit_pct=$(
+                                printf '%.1f' \
+                                        "$((1000 * commit_count / project_total_commits))e-1"
+                        )
+
+                        churn_pct=$(
+                                printf '%.1f' \
+                                        "$((1000 * record_churn / project_total_churn))e-1"
+                        )
+
+                        engagement=$(
+                                printf '%.1f' \
+                                        "$((((\
+                                        1000 * commit_count / project_total_commits) + (\
+                                        1000 * record_churn / project_total_churn)) / \
+                                        2))e-1"
+                        )
+
+                        rows+=(
+                                "${engagement}|${author}|${commit_pct}|${churn_pct}"
+                        )
+                done
+
+                # Sort the by the metrics
+                mapfile -t sorted_rows < <(
+                        printf '%s\n' "${rows[@]}" |
+                                sort -t '|' -k1,1nr
+                )
+                # Calculate from the metrics
+                most_active=""
+                most_active_engagement=""
+                bus_factor=0
+                running_total=0
+
+                for row in "${sorted_rows[@]}"; do
+
+                        IFS='|' read -r \
+                                engagement \
+                                author \
+                                commit_pct \
+                                churn_pct <<<"$row"
+
+                        if [[ -z "$most_active" ]]; then
+                                most_active="$author"
+                                most_active_engagement="$engagement"
+                        fi
+
+                        engagement_bp=${engagement/./}
+
+                        if ((running_total < 500)); then
+                                ((running_total += engagement_bp))
+                                ((bus_factor++))
+                        fi
+
+                done
+
+                # Print this project
+
+                printf '\n'
+                printf 'Project: %s\n' "$project"
+                printf 'Most Active Contributor: %s (%s%%)\n' \
+                        "$most_active" \
+                        "$most_active_engagement"
+                printf 'Bus Factor: %s\n' "$bus_factor"
+                printf 'Contributors: %s\n' "${#sorted_rows[@]}"
+                printf '\n'
+                printf '%-30s %10s %10s %10s\n' \
+                        "Contributor" \
+                        "Commit%" \
+                        "Churn%" \
+                        "Engage%"
+
+                printf '%-30s %10s %10s %10s\n' \
+                        "-----------" \
+                        "-------" \
+                        "------" \
+                        "-------"
+
+                for row in "${sorted_rows[@]}"; do
+
+                        IFS='|' read -r \
+                                engagement \
+                                author \
+                                commit_pct \
+                                churn_pct <<<"$row"
+
+                        printf '%-30s %10s %10s %10s\n' \
+                                "$author" \
+                                "$commit_pct" \
+                                "$churn_pct" \
+                                "$engagement"
+
+                done
+        done
+}
+
+emit_md() {
+
+        declare -A projects_seen
+
+        for key in "${!commits[@]}"; do
+                project="${key%%|*}"
+                projects_seen["$project"]=1
+        done
+
+        for project in "${!projects_seen[@]}"; do
+                rows=()
+
+                for key in "${!commits[@]}"; do
+
+                        current_project="${key%%|*}"
+                        author="${key#*|}"
+
+                        [[ "$current_project" != "$project" ]] && continue
+
+                        commit_count="${commits[$key]}"
+                        record_churn="${churn[$key]}"
+
+                        project_total_commits="${project_commits[$project]}"
+                        project_total_churn="${project_churn[$project]}"
+
+                        commit_pct=$(
+                                printf '%.1f' \
+                                        "$((1000 * commit_count / project_total_commits))e-1"
+                        )
+
+                        churn_pct=$(
+                                printf '%.1f' \
+                                        "$((1000 * record_churn / project_total_churn))e-1"
+                        )
+
+                        engagement=$(
+                                printf '%.1f' \
+                                        "$((((\
+                                        1000 * commit_count / project_total_commits) + (\
+                                        1000 * record_churn / project_total_churn)) / \
+                                        2))e-1"
+                        )
+
+                        rows+=(
+                                "${engagement}|${author}|${commit_pct}|${churn_pct}"
+                        )
+                done
+
+                # Sort the by the metrics
+                mapfile -t sorted_rows < <(
+                        printf '%s\n' "${rows[@]}" |
+                                sort -t '|' -k1,1nr
+                )
+
+                # Calculate from the metrics
+                most_active=""
+                most_active_engagement=""
+                bus_factor=0
+                running_total=0
+
+                for row in "${sorted_rows[@]}"; do
+
+                        IFS='|' read -r \
+                                engagement \
+                                author \
+                                commit_pct \
+                                churn_pct <<<"$row"
+
+                        if [[ -z "$most_active" ]]; then
+                                most_active="$author"
+                                most_active_engagement="$engagement"
+                        fi
+
+                        engagement_bp=${engagement/./}
+
+                        if ((running_total < 500)); then
+                                ((running_total += engagement_bp))
+                                ((bus_factor++))
+                        fi
+
+                done
+
+                echo ""
+                echo "## $project"
+                echo
+
+                echo "- Most Active Contributor: $most_active (${most_active_engagement}%)"
+                echo "- Bus Factor: $bus_factor"
+                printf -- '- Contributors: %s\n' "${#sorted_rows[@]}"
+                echo
+
+                echo "| Contributor | Commit % | Churn % | Engagement % |"
+                echo "|-------------|----------|---------|--------------|"
+
+                for row in "${sorted_rows[@]}"; do
+                        IFS='|' read -r \
+                                engagement \
+                                author \
+                                commit_pct \
+                                churn_pct <<<"$row"
+
+                        printf '| %s | %s | %s | %s |\n' \
+                                "$author" \
+                                "$commit_pct" \
+                                "$churn_pct" \
+                                "$engagement"
+                done
+
+        done
+}
+
+case "$FORMAT" in
+pretty)
+        emit_pretty
+        ;;
+
+tsv)
+        emit_tsv
+        ;;
+
+md)
+        emit_md
+        ;;
+
+*)
+        echo "Unknown format: $FORMAT" >&2
+        exit 1
+        ;;
+esac
+$()
