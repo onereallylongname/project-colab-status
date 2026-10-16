@@ -1,21 +1,72 @@
 # Git Colab
 
+[Installation](#installation) · [Quick Start](#quick-start) · [Usage](#usage) · [Output](#example-output) · [Tips](#tips) · [Boundaries and Ownership](#ownership-boundaries) · [Bus Factor](#bus-factor)
+
+---
+
 A lightweight Git analytics toolkit that estimates **project ownership**, **engagement**, and **bus factor** for multi-project repositories.
 
-The scripts scan a repository, discover `.csproj` projects, and calculate contributor statistics per project based on:
+The scripts scan a repository and calculate contributor statistics per project based on:
 
 - Commit activity
 - Code churn (lines added/removed)
 - Engagement score
 - Bus factor
 
-The goal is not to answer *"who wrote the most code?"* but rather:
+This tool intentionally favors **ownership and engagement** over raw line counts.
 
-> Who understands this project well enough to maintain it?
+More code does not necessarily mean more value.
+
+The objective is to help answer questions such as:
+
+- Who should review changes to this project?
+- Who can help onboard a new engineer?
+- Where is knowledge concentrated?
+- Which projects have a bus-factor risk?
+
+The goal is help you answer:
+
+- `Who understands this project well enough to maintain it?`
+- `How concentrated is the knowledge of this project?`
+- `What happens if our most knowledgeable contributor disappears tomorrow?`
 
 ---
 
-## Architecture
+## Installation
+
+```bash
+git clone https://github.com/stark-antonio-almeida/project-colab-status.git
+cd project-colab-status
+./install.sh
+```
+
+Verify the installation:
+
+```bash
+git-colab-stats-path --help
+```
+
+Uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
+### Requirements
+
+- Git
+- Bash
+- A Git repository
+
+---
+
+## Quick Start
+
+```bash
+git-colab-stats-path my-project-path README.md | git-colab-summary --pretty
+```
+
+## Usage
 
 The Git Colab toolchain consists of two layers:
 
@@ -23,6 +74,11 @@ The Git Colab toolchain consists of two layers:
 - `git-colab-summary` aggregates multiple project reports into a portfolio-level view.
 
 This separation allows data extraction and reporting to evolve independently.
+
+### git-colab-stats-path
+
+This is the base extraction script and it is the base for all others.
+It calls git log to extract the metrics for each path and committer.
 
 ### git-colab-stats-*
 
@@ -33,36 +89,62 @@ Their naming schema is `git-colab-stats-` them followed by the project type.
 
 This is the script that can summarize the output from one or more git-colab-stats-*.
 
----
-
-## Installation
+### Analyze the current repository
 
 ```bash
-git clone https://github.com/stark-antonio-almeida/project-colab-status.git &&
-cd git-colab &&
-./install.sh
+git-colab-stats-* --format tsv | git-colab-summary
 ```
 
-Verify the installation:
+### Stats options
 
 ```bash
-git-colab-stats --help
+git-colab-stats-path
 ```
 
-Uninstall:
+Enable debug output:
 
 ```bash
-./install.sh --uninstall
+git-colab-stats-path --debug
 ```
 
----
+Generate Markdown:
 
-## Example Output
+```bash
+git-colab-stats-path --format md
+```
 
-### Pretty
+Generate TSV:
+
+```bash
+git-colab-stats-path --format tsv
+```
+
+Generate Pretty output:
+
+```bash
+git-colab-stats-path --format pretty
+```
+
+Save a report:
+
+```bash
+git-colab-stats-path --format md > report.md
+```
+
+### Example Output
+
+**Output Formats**
+
+| Format | Purpose |
+| ---------- | ---------- |
+| pretty | Human-readable terminal report |
+| md | Documentation, GitHub, Azure DevOps Wiki |
+| tsv | Excel, Power BI, data analysis |
+
+#### Pretty
 
 ```text
-Project: src/Integration/BackInBlackBus
+Boundary: src/Integration/BackInBlackBus
 
 Most Active Contributor: Freddie Mercury (42.0%)
 Bus Factor: 2
@@ -78,14 +160,14 @@ Bruce Dickinson                      10.0        5.0        7.0
 Chester Bennington                    6.0        2.0        3.0
 ```
 
-### TSV
+#### TSV
 
 ```text
-Project Contributor CommitPct ChurnPct EngagementPct
+Boundary Contributor CommitPct ChurnPct EngagementPct
 ...
 ```
 
-### Markdown
+#### Markdown
 
 ```markdown
 ## src/Speed94
@@ -101,60 +183,6 @@ Project Contributor CommitPct ChurnPct EngagementPct
 | ... | ... | ... | ... |
 ```
 
----
-
-## Requirements
-
-- Git
-- Bash
-- A Git repository
-
----
-
-## Usage
-
-Analyze the current repository:
-
-```bash
-git-colab-stats-* --format tsv | git-colab-summary
-```
-
-### Stats options
-
-```bash
-git-colab-stats
-```
-
-Enable debug output:
-
-```bash
-git-colab-stats --debug
-```
-
-Generate Markdown:
-
-```bash
-git-colab-stats --format md
-```
-
-Generate TSV:
-
-```bash
-git-colab-stats --format tsv
-```
-
-Generate Pretty output:
-
-```bash
-git-colab-stats --format pretty
-```
-
-Save a report:
-
-```bash
-git-colab-stats --format md > report.md
-```
-
 ### Tips
 
 #### Render the report
@@ -166,16 +194,16 @@ Use a md renderer to instantly view the report.
 git-colab-stats-dotnet-csharp | git-colab-summary --format md --mode all | glow -p
 ```
 
-#### Aggregating Multiple Projects
+#### Aggregating Multiple Boundaries
 
 The individual `git-colab-stats-*` scripts are designed to produce machine-readable output that can be combined into higher-level reports.
 
 Example workflow:
 
 ```bash
-git-colab-stats-app --format tsv \
-&& git-colab-stats-lib --format tsv \
-&& git-colab-stats-api --format tsv \
+git-colab-stats-go --format tsv \
+&& git-colab-stats-rust --format tsv \
+&& git-colab-stats-path README.md --format tsv \
 | git-colab-summary
 ```
 
@@ -212,6 +240,21 @@ This way only `Link` will be gathered when metric collection happens (git-colab-
 
 ---
 
+## Ownership Boundaries
+
+Git Colab analyzes ownership boundaries.
+
+An ownership boundary can be:
+
+- A .NET project (`.csproj`)
+- A Rust crate (`Cargo.toml`)
+- A Go module (`go.mod`)
+- A directory provided explicitly to `git-colab-stats-path`
+
+All extractors produce the same output format, allowing results to be summarized consistently.
+
+---
+
 ## Bus Factor
 
 The script estimates bus factor using contributor engagement.
@@ -235,44 +278,6 @@ Bus Factor = 1
 ```
 
 A low bus factor indicates knowledge concentration and potential delivery risk.
-
----
-
-## Output Formats
-
-| Format | Purpose |
-| ---------- | ---------- |
-| pretty | Human-readable terminal report |
-| md | Documentation, GitHub, Azure DevOps Wiki |
-| tsv | Excel, Power BI, data analysis |
-
----
-
-## Philosophy
-
-This tool intentionally favors **ownership and engagement** over raw line counts.
-
-More code does not necessarily mean more value.
-
-The objective is to help answer questions such as:
-
-- Who should review changes to this project?
-- Who can help onboard a new engineer?
-- Where is knowledge concentrated?
-- Which projects have a bus-factor risk?
-
----
-
-## Future Work
-
-Planned improvements include:
-
-- Additional ownership heuristics.
-- Repository-level trend analysis.
-- Historical comparison reports.
-- Additional visualization and charting options.
-- Native Markdown report aggregation.
-- Mermaid-based ownership visualizations.
 
 ---
 
