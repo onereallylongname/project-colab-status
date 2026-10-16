@@ -5,6 +5,7 @@ VERSION=0.2.0
 DEBUG=false
 FORMAT=tsv
 MODE=report
+BUS_THRESHOLD=666
 
 # Functions: helpers
 usage() {
@@ -153,7 +154,7 @@ build_boundary_model() {
 
     engagement_bp=${engagement/./}
 
-    if ((running_total < 500)); then
+    if ((running_total < $BUS_THRESHOLD)); then
       ((running_total += engagement_bp))
       ((bus_factor++))
     fi
@@ -291,6 +292,9 @@ emit_pretty() {
     boundary_contributor_count["$boundary"]="${#sorted_rows[@]}"
     boundary_most_active["$boundary"]="$most_active"
     boundary_most_active_engagement["$boundary"]="$most_active_engagement"
+    bus_threshold_display=$(
+      printf '%.1f' "$((BUS_THRESHOLD * 10))e-2"
+    )
 
     # Print this boundary
 
@@ -299,7 +303,7 @@ emit_pretty() {
     printf 'Most Active Contributor: %s (%s%%)\n' \
       "$most_active" \
       "$most_active_engagement"
-    printf 'Bus Factor: %s\n' "$bus_factor"
+    printf -- 'Bus Factor (%d%%): %s\n' "$bus_threshold_display" "$bus_factor"
     printf 'Contributors: %s\n' "${#sorted_rows[@]}"
     printf '\n'
     printf '%-30s %10s %10s %10s\n' \
@@ -353,6 +357,10 @@ emit_pretty_summary() {
     average_bf="0.0"
   fi
 
+  bus_threshold_display=$(
+    printf '%.1f' "$((BUS_THRESHOLD * 10))e-2"
+  )
+
   printf 'Repository Summary\n'
   printf '\n'
 
@@ -362,8 +370,7 @@ emit_pretty_summary() {
   printf 'Contributors: %s\n' \
     "${#contributors_seen[@]}"
 
-  printf 'Average Bus Factor: %s\n' \
-    "$average_bf"
+  printf 'Average Bus Factor (%s%%): %s\n' "$bus_threshold_display" "$average_bf"
 
   printf '\n'
   printf 'Boundaries by bus factor (low means high risk)\n'
@@ -400,13 +407,16 @@ emit_md() {
     boundary_contributor_count["$boundary"]="${#sorted_rows[@]}"
     boundary_most_active["$boundary"]="$most_active"
     boundary_most_active_engagement["$boundary"]="$most_active_engagement"
+    bus_threshold_display=$(
+      printf '%.1f' "$((BUS_THRESHOLD * 10))e-2"
+    )
 
     echo ""
     echo "## $boundary"
     echo
 
-    echo "- Most Active Contributor: $boundary_most_active (${boundary_most_active_engagement["$boundary"]}%)"
-    echo "- Bus Factor: $bus_factor"
+    echo "- Most Active Contributor: ${boundary_most_active["$boundary"]} (${boundary_most_active_engagement["$boundary"]}%)"
+    printf -- '- Bus Factor (%d%%): %s\n' "$bus_threshold_display" "$bus_factor"
     printf -- '- Contributors: %s\n' "${#sorted_rows[@]}"
     echo
 
