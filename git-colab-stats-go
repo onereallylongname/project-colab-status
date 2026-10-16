@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+export GIT_COLAB_PROGRAM_NAME=${0##*/}
+
+if [[ "${1:-}" =~ ^(-h|--help|--version)$ ]]; then
+  git-colab-stats-path "$1"
+  exit 0
+fi
+
+mapfile -t boundaries < <(
+  find . -name go.mod \
+    -exec dirname {} \; |
+    sort -u
+)
+
+git-colab-stats-path "$@" "${boundaries[@]}"
