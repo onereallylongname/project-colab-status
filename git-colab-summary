@@ -25,10 +25,10 @@ usage_text() {
 Analyzes contribution data produced by git-colab-stats.
 
 The generated metrics help answer:
-  - Who contributes most to a project?
-  - Who is most engaged with a project?
-  - How concentrated is project knowledge?
-  - What is the project's bus factor?
+  - Who contributes most to a boundary?
+  - Who is most engaged with a boundary?
+  - How concentrated is boundary knowledge?
+  - What is the boundary's bus factor?
 
 EOF
 }
@@ -87,39 +87,39 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Functions: Code logic
-build_project_model() {
-  local project="$1"
+build_boundary_model() {
+  local boundary="$1"
 
   rows=()
 
   for key in "${!commits[@]}"; do
 
-    current_project="${key%%|*}"
+    current_boundary="${key%%|*}"
     author="${key#*|}"
 
-    [[ "$current_project" != "$project" ]] && continue
+    [[ "$current_boundary" != "$boundary" ]] && continue
 
     commit_count="${commits[$key]}"
     record_churn="${churn[$key]}"
 
-    project_total_commits="${project_commits[$project]}"
-    project_total_churn="${project_churn[$project]}"
+    boundary_total_commits="${boundary_commits[$boundary]}"
+    boundary_total_churn="${boundary_churn[$boundary]}"
 
     commit_pct=$(
       printf '%.1f' \
-        "$((1000 * commit_count / project_total_commits))e-1"
+        "$((1000 * commit_count / boundary_total_commits))e-1"
     )
 
     churn_pct=$(
       printf '%.1f' \
-        "$((1000 * record_churn / project_total_churn))e-1"
+        "$((1000 * record_churn / boundary_total_churn))e-1"
     )
 
     engagement=$(
       printf '%.1f' \
         "$((((\
-        1000 * commit_count / project_total_commits) + (\
-        1000 * record_churn / project_total_churn)) / \
+        1000 * commit_count / boundary_total_commits) + (\
+        1000 * record_churn / boundary_total_churn)) / \
         2))e-1"
     )
 
@@ -160,21 +160,6 @@ build_project_model() {
   done
 }
 
-collect_project_metrics() {
-
-  ((${#project_bus_factor[@]} > 0)) && return
-
-  for project in "${!projects_seen[@]}"; do
-
-    build_project_model "$project"
-
-    project_bus_factor["$project"]="$bus_factor"
-    project_contributor_count["$project"]="${#sorted_rows[@]}"
-    project_most_active["$project"]="$most_active"
-    project_most_active_engagement["$project"]="$most_active_engagement"
-
-  done
-}
 #
 # Storage
 #
@@ -186,30 +171,46 @@ declare -A churn
 
 declare -A contributors_seen
 
-declare -A project_commits
-declare -A project_churn
-declare -A projects_seen
-declare -A project_bus_factor
-declare -A project_contributor_count
-declare -A project_most_active
-declare -A project_most_active_engagement
+declare -A boundary_commits
+declare -A boundary_churn
+declare -A boundaries_seen
+declare -A boundary_bus_factor
+declare -A boundary_contributor_count
+declare -A boundary_most_active
+declare -A boundary_most_active_engagement
+
+collect_boundary_metrics() {
+
+  ((${#boundary_bus_factor[@]} > 0)) && return
+
+  for boundary in "${!boundaries_seen[@]}"; do
+
+    build_boundary_model "$boundary"
+
+    boundary_bus_factor["$boundary"]="$bus_factor"
+    boundary_contributor_count["$boundary"]="${#sorted_rows[@]}"
+    boundary_most_active["$boundary"]="$most_active"
+    boundary_most_active_engagement["$boundary"]="$most_active_engagement"
+
+  done
+}
 
 #
 # Read header
 #
 
-IFS=$'\t' read -r _header_project _header_author _header_commits _header_additions _header_deletions
+IFS=$'\t' read -r _header_boundary _header_author _header_commits _header_additions _header_deletions
 
 #
 # First pass
 #
 
-while IFS=$'\t' read -r project author commit_count added deleted; do
+while IFS=$'\t' read -r boundary author commit_count added deleted; do
 
   contributors_seen["$author"]=1
-  projects_seen["$project"]=1
+  boundaries_seen["$boundary"]=1
 
-  key="$project|$author"
+  key="$boundary|$author"
 
   commits["$key"]="$commit_count"
   additions["$key"]="$added"
@@ -218,12 +219,12 @@ while IFS=$'\t' read -r project author commit_count added deleted; do
   record_churn=$((added + deleted))
   churn["$key"]="$record_churn"
 
-  ((project_commits["$project"] += commit_count))
-  ((project_churn["$project"] += record_churn))
+  ((boundary_commits["$boundary"] += commit_count))
+  ((boundary_churn["$boundary"] += record_churn))
 
   debug \
-    'project=[%s] author=[%s] commits=[%s] churn=[%s]\n' \
-    "$project" \
+    'boundary=[%s] author=[%s] commits=[%s] churn=[%s]\n' \
+    "$boundary" \
     "$author" \
     "$commit_count" \
     "$record_churn"
@@ -232,11 +233,11 @@ done
 
 emit_tsv() {
 
-  printf 'project\tauthor\tcommits\tadditions\tdeletions\tchurn\tcommit_ownership\tchurn_ownership\tengagement\n'
+  printf 'boundary\tauthor\tcommits\tadditions\tdeletions\tchurn\tcommit_ownership\tchurn_ownership\tengagement\n'
 
   for key in "${!commits[@]}"; do
 
-    project="${key%%|*}"
+    boundary="${key%%|*}"
     author="${key#*|}"
 
     commit_count="${commits[$key]}"
@@ -244,31 +245,31 @@ emit_tsv() {
     deleted="${deletions[$key]}"
     record_churn="${churn[$key]}"
 
-    project_total_commits="${project_commits[$project]}"
-    project_total_churn="${project_churn[$project]}"
+    boundary_total_commits="${boundary_commits[$boundary]}"
+    boundary_total_churn="${boundary_churn[$boundary]}"
 
     commit_ownership=$(
       printf '%.2f' \
         "$((\
-        10000 * commit_count / project_total_commits))e-2"
+        10000 * commit_count / boundary_total_commits))e-2"
     )
 
     churn_ownership=$(
       printf '%.2f' \
         "$((\
-        10000 * record_churn / project_total_churn))e-2"
+        10000 * record_churn / boundary_total_churn))e-2"
     )
 
     engagement=$(
       printf '%.2f' \
         "$((((\
-        10000 * commit_count / project_total_commits) + (\
-        10000 * record_churn / project_total_churn)) / \
+        10000 * commit_count / boundary_total_commits) + (\
+        10000 * record_churn / boundary_total_churn)) / \
         2))e-2"
     )
 
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-      "$project" \
+      "$boundary" \
       "$author" \
       "$commit_count" \
       "$added" \
@@ -282,19 +283,19 @@ emit_tsv() {
 
 emit_pretty() {
 
-  for project in "${!projects_seen[@]}"; do
+  for boundary in "${!boundaries_seen[@]}"; do
 
-    build_project_model "$project"
+    build_boundary_model "$boundary"
 
-    project_bus_factor["$project"]="$bus_factor"
-    project_contributor_count["$project"]="${#sorted_rows[@]}"
-    project_most_active["$project"]="$most_active"
-    project_most_active_engagement["$project"]="$most_active_engagement"
+    boundary_bus_factor["$boundary"]="$bus_factor"
+    boundary_contributor_count["$boundary"]="${#sorted_rows[@]}"
+    boundary_most_active["$boundary"]="$most_active"
+    boundary_most_active_engagement["$boundary"]="$most_active_engagement"
 
-    # Print this project
+    # Print this boundary
 
     printf '\n'
-    printf 'Project: %s\n' "$project"
+    printf 'Boundary: %s\n' "$boundary"
     printf 'Most Active Contributor: %s (%s%%)\n' \
       "$most_active" \
       "$most_active_engagement"
@@ -333,20 +334,20 @@ emit_pretty() {
 
 emit_pretty_summary() {
 
-  collect_project_metrics
+  collect_boundary_metrics
 
   local total_bf=0
-  local project_count=0
+  local boundary_count=0
 
-  for project in "${!project_bus_factor[@]}"; do
-    ((total_bf += project_bus_factor["$project"]))
-    ((project_count++))
+  for boundary in "${!boundary_bus_factor[@]}"; do
+    ((total_bf += boundary_bus_factor["$boundary"]))
+    ((boundary_count++))
   done
 
-  if ((project_count > 0)); then
+  if ((boundary_count > 0)); then
     average_bf=$(
       printf '%.1f' \
-        "$((100 * total_bf / project_count))e-2"
+        "$((100 * total_bf / boundary_count))e-2"
     )
   else
     average_bf="0.0"
@@ -355,8 +356,8 @@ emit_pretty_summary() {
   printf 'Repository Summary\n'
   printf '\n'
 
-  printf 'Projects: %s\n' \
-    "${#projects_seen[@]}"
+  printf 'Boundaries: %s\n' \
+    "${#boundaries_seen[@]}"
 
   printf 'Contributors: %s\n' \
     "${#contributors_seen[@]}"
@@ -365,46 +366,46 @@ emit_pretty_summary() {
     "$average_bf"
 
   printf '\n'
-  printf 'Projects by bus factor (low means high risk)\n'
+  printf 'Boundaries by bus factor (low means high risk)\n'
   printf '\n'
 
   printf '%-40s %10s\n' \
-    "Project" \
+    "Boundary" \
     "BusFactor"
 
   printf '%-40s %10s\n' \
     "-------" \
     "---------"
 
-  for project in "${!project_bus_factor[@]}"; do
+  for boundary in "${!boundary_bus_factor[@]}"; do
     printf '%s\t%s\n' \
-      "${project_bus_factor[$project]}" \
-      "$project"
+      "${boundary_bus_factor[$boundary]}" \
+      "$boundary"
   done |
     sort -n |
-    while IFS=$'\t' read -r bf project; do
+    while IFS=$'\t' read -r bf boundary; do
       printf '%-40s %10s\n' \
-        "$project" \
+        "$boundary" \
         "$bf"
     done
 }
 
 emit_md() {
 
-  for project in "${!projects_seen[@]}"; do
+  for boundary in "${!boundaries_seen[@]}"; do
 
-    build_project_model "$project"
+    build_boundary_model "$boundary"
 
-    project_bus_factor["$project"]="$bus_factor"
-    project_contributor_count["$project"]="${#sorted_rows[@]}"
-    project_most_active["$project"]="$most_active"
-    project_most_active_engagement["$project"]="$most_active_engagement"
+    boundary_bus_factor["$boundary"]="$bus_factor"
+    boundary_contributor_count["$boundary"]="${#sorted_rows[@]}"
+    boundary_most_active["$boundary"]="$most_active"
+    boundary_most_active_engagement["$boundary"]="$most_active_engagement"
 
     echo ""
-    echo "## $project"
+    echo "## $boundary"
     echo
 
-    echo "- Most Active Contributor: $most_active (${most_active_engagement}%)"
+    echo "- Most Active Contributor: $boundary_most_active (${boundary_most_active_engagement["$boundary"]}%)"
     echo "- Bus Factor: $bus_factor"
     printf -- '- Contributors: %s\n' "${#sorted_rows[@]}"
     echo
@@ -431,20 +432,20 @@ emit_md() {
 
 emit_md_summary() {
 
-  collect_project_metrics
+  collect_boundary_metrics
 
   local total_bf=0
-  local project_count=0
+  local boundary_count=0
 
-  for project in "${!project_bus_factor[@]}"; do
-    ((total_bf += project_bus_factor["$project"]))
-    ((project_count++))
+  for boundary in "${!boundary_bus_factor[@]}"; do
+    ((total_bf += boundary_bus_factor["$boundary"]))
+    ((boundary_count++))
   done
 
-  if ((project_count > 0)); then
+  if ((boundary_count > 0)); then
     average_bf=$(
       printf '%.1f' \
-        "$((100 * total_bf / project_count))e-2"
+        "$((100 * total_bf / boundary_count))e-2"
     )
   else
     average_bf="0.0"
@@ -453,26 +454,26 @@ emit_md_summary() {
   echo "# Repository Summary"
   echo
 
-  echo "- Projects: ${#projects_seen[@]}"
+  echo "- Boundaries: ${#boundaries_seen[@]}"
   echo "- Contributors: ${#contributors_seen[@]}"
   echo "- Average Bus Factor: $average_bf"
   echo
 
-  echo "## Projects by bus factor (low means high risk)"
+  echo "## Boundaries by bus factor (low means high risk)"
   echo
 
-  echo "| Project | Bus Factor |"
+  echo "| Boundary | Bus Factor |"
   echo "|---------|------------|"
 
-  for project in "${!project_bus_factor[@]}"; do
+  for boundary in "${!boundary_bus_factor[@]}"; do
     printf '%s\t%s\n' \
-      "${project_bus_factor[$project]}" \
-      "$project"
+      "${boundary_bus_factor[$boundary]}" \
+      "$boundary"
   done |
     sort -n |
-    while IFS=$'\t' read -r bf project; do
+    while IFS=$'\t' read -r bf boundary; do
       printf '| %s | %s |\n' \
-        "$project" \
+        "$boundary" \
         "$bf"
     done
 }
