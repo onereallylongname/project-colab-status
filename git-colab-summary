@@ -416,7 +416,7 @@ emit_md() {
     echo
 
     echo "- Most Active Contributor: ${boundary_most_active["$boundary"]} (${boundary_most_active_engagement["$boundary"]}%)"
-    printf -- '- Bus Factor (%d%%): %s\n' "$bus_threshold_display" "$bus_factor"
+    printf -- '- Bus Factor (%f%%): %s\n' "$bus_threshold_display" "$bus_factor"
     printf -- '- Contributors: %s\n' "${#sorted_rows[@]}"
     echo
 
